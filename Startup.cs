@@ -11,150 +11,232 @@ using BackEnd.Entities;
 using Microsoft.OpenApi.Models;
 using Azure.Messaging.ServiceBus;
 using Azure.Security.KeyVault.Secrets;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace BackEnd
 {
     public class Startup
     {
         private readonly IConfiguration _configuration;
+        private readonly ILogger<Startup> _logger;
 
-        public Startup(IConfiguration configuration)
+        public Startup(IConfiguration configuration, ILogger<Startup> logger)
         {
             _configuration = configuration;
-            Console.WriteLine("Startup constructor called.");
+            _logger = logger;
+
+            _logger.LogInformation("Startup constructor initialized");
+            _logger.LogDebug("Configuration keys: {ConfigurationKeys}",
+                string.Join(", ", _configuration.AsEnumerable().Select(x => x.Key)));
         }
 
         public void ConfigureServices(IServiceCollection services)
         {
+            var stopwatch = Stopwatch.StartNew();
+            _logger.LogInformation("Starting ConfigureServices...");
+
             try
             {
-                Console.WriteLine("Starting ConfigureServices...");
+                // Stage 1: Basic Services
+                _logger.LogInformation("Configuring basic services...");
+                services.AddControllers();
+                ConfigureSwagger(services);
+                ConfigureCors(services);
+                ConfigureFileUploadLimits(services);
 
-                // Configure DefaultAzureCredential with specific options
-                var credentialOptions = new DefaultAzureCredentialOptions
-                {
-                    ExcludeVisualStudioCredential = true,
-                    ExcludeAzureCliCredential = false,
-                    ExcludeEnvironmentCredential = true,
-                    ExcludeManagedIdentityCredential = true,
-                    ExcludeSharedTokenCacheCredential = true,
-                    ExcludeInteractiveBrowserCredential = true,
-                    TenantId = "f6d006d0-5280-44ab-9fa1-85c211e2ab03" // Your Directory ID
-                };
-
-                var keyVaultUrl = _configuration["KeyVault:Url"];
-                if (string.IsNullOrEmpty(keyVaultUrl))
-                {
-                    throw new Exception("Key Vault URL is missing in configuration.");
-                }
-
-                // Build configuration with Key Vault
-                var configurationBuilder = new ConfigurationBuilder()
-                    .AddConfiguration(_configuration)
-                    .AddAzureKeyVault(new Uri(keyVaultUrl), new DefaultAzureCredential(credentialOptions))
-                    .Build();
-
-                // Get secrets from Key Vault
-                var cosmosDbConnectionString = configurationBuilder["CosmosDb"];
-                var blobConnectionString = configurationBuilder["BlobStorage"];
-                var serviceBusConnectionString = configurationBuilder["ServiceBusConnectionString"]; // Make sure this secret exists in your Key Vault
-
-                // Validate required configurations
-                if (string.IsNullOrEmpty(cosmosDbConnectionString) ||
-                    string.IsNullOrEmpty(blobConnectionString))
-                {
-                    throw new Exception("Required connection strings are missing.");
-                }
-
-                // Configure Cosmos DB
-                var cosmosClientOptions = new CosmosClientOptions
-                {
-                    ConnectionMode = ConnectionMode.Direct,
-                    MaxRequestsPerTcpConnection = 10,
-                    MaxTcpConnectionsPerEndpoint = 10
-                };
-                var cosmosClient = new CosmosClient(cosmosDbConnectionString, cosmosClientOptions);
+                // Stage 2: Azure Services
+                _logger.LogInformation("Configuring Azure services...");
+                var (cosmosClient, blobServiceClient) = ConfigureAzureServices(services);
                 services.AddSingleton(cosmosClient);
+                services.AddSingleton(blobServiceClient);
                 services.AddScoped<CosmosDbContext>();
 
-                // Configure Blob Storage
-                services.AddSingleton(new BlobServiceClient(blobConnectionString));
+                // Stage 3: Additional Services
+                _logger.LogInformation("Configuring additional services...");
+                ConfigureTusDotNet(services);
 
-                // Configure Service Bus if connection string is available
-                //if (!string.IsNullOrEmpty(serviceBusConnectionString))
-                //{
-                //    services.AddSingleton(new ServiceBusClient(serviceBusConnectionString));
-                //    services.AddSingleton(provider =>
-                //        provider.GetRequiredService<ServiceBusClient>().CreateSender(
-                //            configurationBuilder.GetSection("ServiceBus")["QueueName"]));
-                //}
-
-                // Add configuration to DI
-                services.AddSingleton<IConfiguration>(configurationBuilder);
-
-                // Configure file upload limits
-                services.Configure<FormOptions>(options =>
-                {
-                    options.MultipartBodyLengthLimit = 500 * 1024 * 1024;
-                });
-
-                services.Configure<IISServerOptions>(options =>
-                {
-                    options.MaxRequestBodySize = 500 * 1024 * 1024;
-                });
-
-                services.Configure<KestrelServerOptions>(options =>
-                {
-                    options.Limits.MaxRequestBodySize = 500 * 1024 * 1024;
-                    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(10);
-                    options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(10);
-                });
-
-                // Configure CORS
-                services.AddCors(options =>
-                {
-                    options.AddPolicy("AllowSpecificOrigin", builder =>
-                    {
-                        builder.AllowAnyOrigin()
-                               .AllowAnyHeader()
-                               .AllowAnyMethod();
-                    });
-                });
-
-                services.AddControllers();
-                services.AddSwaggerGen(c =>
-                {
-                    c.SwaggerDoc("v1", new OpenApiInfo { Title = "My API", Version = "v1" });
-                });
-
-                Console.WriteLine("ConfigureServices completed successfully.");
+                _logger.LogInformation("ConfigureServices completed successfully in {ElapsedMilliseconds}ms",
+                    stopwatch.ElapsedMilliseconds);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in ConfigureServices: {ex}");
+                _logger.LogCritical(ex, "FATAL ERROR in ConfigureServices after {ElapsedMilliseconds}ms",
+                    stopwatch.ElapsedMilliseconds);
+                throw new Exception("Startup configuration failed", ex);
+            }
+        }
+
+        private (CosmosClient, BlobServiceClient) ConfigureAzureServices(IServiceCollection services)
+        {
+            _logger.LogInformation("Initializing Azure services...");
+
+            try
+            {
+                // Key Vault Configuration
+                _logger.LogInformation("Retrieving Key Vault URL...");
+                var keyVaultUrl = _configuration["KeyVault:Url"];
+                if (string.IsNullOrEmpty(keyVaultUrl))
+                {
+                    throw new ArgumentNullException("KeyVault:Url", "Key Vault URL is missing in configuration");
+                }
+                _logger.LogInformation("Using Key Vault: {KeyVaultUrl}", keyVaultUrl);
+
+                // Initialize Key Vault Client
+                _logger.LogInformation("Creating Key Vault client...");
+                var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
+                {
+                    ExcludeVisualStudioCredential = true,
+                    ExcludeAzureCliCredential = false,
+                    ExcludeEnvironmentCredential = false,
+                    ExcludeManagedIdentityCredential = false,
+                    ExcludeSharedTokenCacheCredential = true,
+                    ExcludeInteractiveBrowserCredential = true,
+                    TenantId = "f6d006d0-5280-44ab-9fa1-85c211e2ab03"
+                });
+
+                var secretClient = new SecretClient(new Uri(keyVaultUrl), credential);
+                services.AddSingleton(secretClient);
+
+                // Get Secrets with Retry Policy
+                _logger.LogInformation("Retrieving secrets from Key Vault...");
+                var cosmosDbConnectionString = GetSecretWithRetry(secretClient, "CosmosDb", 3);
+                var blobConnectionString = GetSecretWithRetry(secretClient, "BlobStorage", 3);
+                var serviceBusConnectionString = GetSecretWithRetry(secretClient, "ServiceBusConnectionString", 2, optional: true);
+
+                // Initialize Cosmos Client
+                _logger.LogInformation("Initializing Cosmos DB client...");
+                var cosmosClient = new CosmosClient(cosmosDbConnectionString, new CosmosClientOptions
+                {
+                    ConnectionMode = ConnectionMode.Direct,
+                    MaxRequestsPerTcpConnection = 10,
+                    MaxTcpConnectionsPerEndpoint = 10,
+                    SerializerOptions = new CosmosSerializationOptions
+                    {
+                        PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase
+                    }
+                });
+
+                // Initialize Blob Client
+                _logger.LogInformation("Initializing Blob Storage client...");
+                var blobServiceClient = new BlobServiceClient(blobConnectionString);
+
+                // Initialize Service Bus if available
+                if (!string.IsNullOrEmpty(serviceBusConnectionString))
+                {
+                    _logger.LogInformation("Initializing Service Bus client...");
+                    services.AddSingleton(new ServiceBusClient(serviceBusConnectionString));
+                }
+
+                return (cosmosClient, blobServiceClient);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to configure Azure services");
                 throw;
             }
         }
 
-        public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ILogger<Startup> logger)
+        private string GetSecretWithRetry(SecretClient client, string secretName, int maxRetries, bool optional = false)
         {
-            try
+            var retryCount = 0;
+            while (true)
             {
-                logger.LogInformation("Starting Configure...");
-
-                if (env.IsDevelopment())
+                try
                 {
-                    app.UseDeveloperExceptionPage();
-                    app.UseSwagger();
-                    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1"));
+                    _logger.LogDebug("Attempt {RetryCount} to get secret {SecretName}", retryCount + 1, secretName);
+                    var secret = client.GetSecret(secretName);
+
+                    if (string.IsNullOrEmpty(secret.Value.Value))
+                    {
+                        throw new Exception($"Secret {secretName} exists but is empty");
+                    }
+
+                    _logger.LogDebug("Successfully retrieved secret {SecretName}", secretName);
+                    return secret.Value.Value;
                 }
+                catch (Exception ex)
+                {
+                    retryCount++;
+                    _logger.LogWarning(ex, "Failed to get secret {SecretName} (attempt {RetryCount}/{MaxRetries})",
+                        secretName, retryCount, maxRetries);
 
-                app.UseHttpsRedirection();
-                app.UseRouting();
-                app.UseCors("AllowSpecificOrigin");
+                    if (retryCount >= maxRetries)
+                    {
+                        if (optional)
+                        {
+                            _logger.LogWarning("Secret {SecretName} is optional and not available", secretName);
+                            return string.Empty;
+                        }
+                        _logger.LogError(ex, "Failed to get required secret {SecretName} after {MaxRetries} attempts",
+                            secretName, maxRetries);
+                        throw;
+                    }
 
-                // Configure tusdotnet for file uploads
-                app.UseTus(httpContext => new DefaultTusConfiguration
+                    Thread.Sleep(1000 * retryCount); // Exponential backoff
+                }
+            }
+        }
+
+        private void ConfigureSwagger(IServiceCollection services)
+        {
+            _logger.LogInformation("Configuring Swagger...");
+            services.AddSwaggerGen(c =>
+            {
+                c.SwaggerDoc("v1", new OpenApiInfo { Title = "My API", Version = "v1" });
+                c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+                {
+                    Description = "JWT Authorization header",
+                    Name = "Authorization",
+                    In = ParameterLocation.Header,
+                    Type = SecuritySchemeType.ApiKey,
+                    Scheme = "Bearer"
+                });
+            });
+        }
+
+        private void ConfigureCors(IServiceCollection services)
+        {
+            _logger.LogInformation("Configuring CORS...");
+            services.AddCors(options =>
+            {
+                options.AddPolicy("AllowSpecificOrigin", builder =>
+                {
+                    builder.AllowAnyOrigin()
+                           .AllowAnyHeader()
+                           .AllowAnyMethod();
+                });
+            });
+        }
+
+        private void ConfigureFileUploadLimits(IServiceCollection services)
+        {
+            _logger.LogInformation("Configuring file upload limits...");
+            services.Configure<FormOptions>(options =>
+            {
+                options.MultipartBodyLengthLimit = 500 * 1024 * 1024;
+            });
+
+            services.Configure<IISServerOptions>(options =>
+            {
+                options.MaxRequestBodySize = 500 * 1024 * 1024;
+            });
+
+            services.Configure<KestrelServerOptions>(options =>
+            {
+                options.Limits.MaxRequestBodySize = 500 * 1024 * 1024;
+                options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(10);
+                options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(10);
+            });
+        }
+
+        private void ConfigureTusDotNet(IServiceCollection services)
+        {
+            _logger.LogInformation("Configuring TusDotNet...");
+            services.AddSingleton(provider =>
+            {
+                var env = provider.GetRequiredService<IWebHostEnvironment>();
+                return new DefaultTusConfiguration
                 {
                     Store = new TusDiskStore(Path.Combine(env.ContentRootPath, "uploads")),
                     UrlPath = "/files",
@@ -163,34 +245,91 @@ namespace BackEnd
                     {
                         OnFileCompleteAsync = async ctx =>
                         {
-                            var fileId = ctx.FileId;
-                            var filePath = Path.Combine(env.ContentRootPath, "uploads", fileId);
-                            logger.LogInformation($"File {fileId} uploaded to {filePath}");
+                            var logger = provider.GetRequiredService<ILogger<Startup>>();
+                            logger.LogInformation("File upload completed: {FileId}", ctx.FileId);
                         }
                     }
-                });
+                };
+            });
+        }
 
-                app.UseMiddleware<SkipAuthorizationMiddleware>();
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            _logger.LogInformation("Starting Configure...");
 
+            try
+            {
+                // Exception Handling
+                if (env.IsDevelopment())
+                {
+                    _logger.LogInformation("Enabling developer exception page");
+                    app.UseDeveloperExceptionPage();
+                    app.UseSwagger();
+                    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "My API V1"));
+                }
+                else
+                {
+                    app.UseExceptionHandler("/error");
+                    app.UseHsts();
+                }
+
+                // Middleware Pipeline
+                app.UseHttpsRedirection();
+                app.UseRouting();
+                app.UseCors("AllowSpecificOrigin");
+
+                // Request Logging
                 app.Use(async (context, next) =>
                 {
-                    logger.LogInformation("Request: {Method} {Path}", context.Request.Method, context.Request.Path);
-                    await next.Invoke();
-                    logger.LogInformation("Response: {StatusCode}", context.Response.StatusCode);
+                    var logger = context.RequestServices.GetRequiredService<ILogger<Startup>>();
+                    logger.LogInformation("Incoming request: {Method} {Path}", context.Request.Method, context.Request.Path);
+
+                    var stopwatch = Stopwatch.StartNew();
+                    await next();
+                    stopwatch.Stop();
+
+                    logger.LogInformation("Request completed: {StatusCode} in {ElapsedMilliseconds}ms",
+                        context.Response.StatusCode, stopwatch.ElapsedMilliseconds);
                 });
 
+                // TusDotNet File Uploads
+                app.UseTus(context => context.RequestServices.GetRequiredService<DefaultTusConfiguration>());
+
+                app.UseMiddleware<SkipAuthorizationMiddleware>();
                 app.UseAuthorization();
 
+                // Endpoints
                 app.UseEndpoints(endpoints =>
                 {
                     endpoints.MapControllers();
+
+                    // Health check endpoint
+                    endpoints.MapGet("/health", async context =>
+                    {
+                        var logger = context.RequestServices.GetRequiredService<ILogger<Startup>>();
+                        logger.LogInformation("Health check requested");
+                        await context.Response.WriteAsync("Healthy");
+                    });
+
+                    // Configuration dump endpoint (for debugging)
+                    if (env.IsDevelopment())
+                    {
+                        endpoints.MapGet("/config", async context =>
+                        {
+                            var config = context.RequestServices.GetRequiredService<IConfiguration>();
+                            await context.Response.WriteAsJsonAsync(config.AsEnumerable());
+                        });
+                    }
                 });
 
-                logger.LogInformation("Application configured successfully.");
+                _logger.LogInformation("Configure completed successfully in {ElapsedMilliseconds}ms",
+                    stopwatch.ElapsedMilliseconds);
             }
             catch (Exception ex)
             {
-                logger.LogError($"Configuration error: {ex}");
+                _logger.LogCritical(ex, "FATAL ERROR in Configure after {ElapsedMilliseconds}ms",
+                    stopwatch.ElapsedMilliseconds);
                 throw;
             }
         }
