@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace BackEnd
 {
@@ -14,10 +15,18 @@ namespace BackEnd
             Host.CreateDefaultBuilder(args)
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
+                    webBuilder.CaptureStartupErrors(true); // Critical for Azure
                     webBuilder.UseStartup<Startup>();
-                 webBuilder.UseUrls("http://0.0.0.0:8080");
-                });
 
+                    // Remove UseUrls - Azure will handle the port binding
+                    // webBuilder.UseUrls("http://0.0.0.0:8080"); 
+
+                    // Add this for better error visibility
+                    webBuilder.ConfigureLogging(logging =>
+                    {
+                        logging.AddConsole();
+                        logging.AddDebug();
+                    });
+                });
     }
 }
- 
