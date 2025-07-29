@@ -1,0 +1,111 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+
+  <!-- Adjectives -->
+  <data name="Adj_Aventureux-Adventurous" xml:space="preserve">
+    <value>Adventurous</value>
+  </data>
+  <data name="Adj_Brillant-Bright" xml:space="preserve">
+    <value>Bright</value>
+  </data>
+  <data name="Adj_Charmant-Charming" xml:space="preserve">
+    <value>Charming</value>
+  </data>
+  <data name="Adj_Joyeux-Cheerful" xml:space="preserve">
+    <value>Cheerful</value>
+  </data>
+  <data name="Adj_Clever-Clever" xml:space="preserve">
+    <value>Clever</value>
+  </data>
+  <data name="Adj_Courageux-Courageous" xml:space="preserve">
+    <value>Courageous</value>
+  </data>
+  <data name="Adj_Confortable-Cozy" xml:space="preserve">
+    <value>Cozy</value>
+  </data>
+  <data name="Adj_Créatif-Creative" xml:space="preserve">
+    <value>Creative</value>
+  </data>
+  <data name="Adj_Curieux-Curious" xml:space="preserve">
+    <value>Curious</value>
+  </data>
+  <data name="Adj_Déterminé-Determined" xml:space="preserve">
+    <value>Determined</value>
+  </data>
+  <data name="Adj_Énergique-Energetic" xml:space="preserve">
+    <value>Energetic</value>
+  </data>
+  <data name="Adj_Amical-Friendly" xml:space="preserve">
+    <value>Friendly</value>
+  </data>
+  <data name="Adj_Doux-Gentle" xml:space="preserve">
+    <value>Gentle</value>
+  </data>
+  <data name="Adj_Sincère-Genuine" xml:space="preserve">
+    <value>Genuine</value>
+  </data>
+
+  <!-- Nouns -->
+  <data name="Noun_Ours-Bear" xml:space="preserve">
+    <value>Bear</value>
+  </data>
+  <data name="Noun_Brise-Breeze" xml:space="preserve">
+    <value>Breeze</value>
+  </data>
+  <data name="Noun_Ruisseau-Brook" xml:space="preserve">
+    <value>Brook</value>
+  </data>
+  <data name="Noun_Canyon-Canyon" xml:space="preserve">
+    <value>Canyon</value>
+  </data>
+  <data name="Noun_Cascade-Cascade" xml:space="preserve">
+    <value>Cascade</value>
+  </data>
+  <data name="Noun_Désert-Desert" xml:space="preserve">
+    <value>Desert</value>
+  </data>
+  <data name="Noun_Écho-Echo" xml:space="preserve">
+    <value>Echo</value>
+  </data>
+  <data name="Noun_Flamme-Flame" xml:space="preserve">
+    <value>Flame</value>
+  </data>
+  <data name="Noun_Bosquet-Grove" xml:space="preserve">
+    <value>Grove</value>
+  </data>
+  <data name="Noun_Port-Harbor" xml:space="preserve">
+    <value>Harbor</value>
+  </data>
+  <data name="Noun_Infinity-Infinity" xml:space="preserve">
+    <value>Infinity</value>
+  </data>
+  <data name="Noun_Île-Island" xml:space="preserve">
+    <value>Island</value>
+  </data>
+  <data name="Noun_Lagune-Lagoon" xml:space="preserve">
+    <value>Lagoon</value>
+  </data>
+  <data name="Noun_Prés-Meadow" xml:space="preserve">
+    <value>Meadow</value>
+  </data>
+  <data name="Noun_Brouillard-Mist" xml:space="preserve">
+    <value>Mist</value>
+  </data>
+  <data name="Noun_Lune-Moon" xml:space="preserve">
+    <value>Moon</value>
+  </data>
+
+  <!-- Continue for the rest of the nouns -->
+</root>
